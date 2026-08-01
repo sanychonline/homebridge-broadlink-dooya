@@ -21,6 +21,12 @@ const DOOYA_V2_COMMANDS = {
   close: Buffer.from([0x61, 0x32, 0xa0]),
   stop: Buffer.from([0x4c, 0x73, 0xa0]),
 };
+const BROADLINK_ERRORS = new Map([
+  [-1, 'authentication failed; the auth code changed, pair the device again'],
+  [-4, 'command is not supported by this device or firmware'],
+  [-6, 'packet structure is invalid'],
+  [-7, 'control key is expired or local control is locked; disable Lock Device in the Broadlink app or re-pair the device on this WLAN'],
+]);
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -81,6 +87,15 @@ function getAlternateDooyaType(type) {
     return 0x4ead;
   }
   return null;
+}
+
+function decodeBroadlinkError(value) {
+  const signed = value > 0x7fff ? value - 0x10000 : value;
+  const description = BROADLINK_ERRORS.get(signed);
+  if (!description) {
+    return `Broadlink device returned error ${value} (${signed})`;
+  }
+  return `Broadlink device returned error ${value} (${signed}): ${description}`;
 }
 
 class BroadlinkSession {
@@ -256,7 +271,7 @@ class BroadlinkSession {
 
     const err = message.readUInt16LE(0x22);
     if (err !== 0) {
-      pending.reject(new Error(`Broadlink device returned error ${err}`));
+      pending.reject(new Error(decodeBroadlinkError(err)));
       return;
     }
 

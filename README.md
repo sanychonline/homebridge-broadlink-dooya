@@ -65,3 +65,9 @@ Then restart the Homebridge container.
 - This plugin is for direct Wi-Fi control of the Dooya controller.
 - If one device type fails during startup, the plugin automatically retries the other Dooya type.
 - HomeKit position is estimated from movement time, so set the open/close durations as accurately as possible.
+
+## Error 65529
+
+`65529` is Broadlink error `-7`. The device is rejecting local control because the control key is expired or local device locking is enabled.
+
+In the Broadlink app, open the device settings and switch off `Lock Device` / device lock. If the setting is missing or the device still rejects auth, remove and pair the device again on the same 2.4 GHz WLAN, then restart Homebridge.
