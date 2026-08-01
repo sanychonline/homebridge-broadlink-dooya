@@ -1,0 +1,20 @@
+{
+  "name": "homebridge-broadlink-dooya",
+  "version": "0.1.0",
+  "description": "Homebridge plugin for Broadlink-controlled Dooya DT360E curtain motors",
+  "main": "index.js",
+  "keywords": [
+    "homebridge-plugin",
+    "homebridge",
+    "broadlink",
+    "dooya",
+    "curtain",
+    "window-covering"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "peerDependencies": {
+    "homebridge": ">=2.0.0"
+  }
+}
