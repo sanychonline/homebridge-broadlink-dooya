@@ -1,26 +1,32 @@
 # homebridge-broadlink-dooya
 
-Homebridge plugin for Dooya DT360E curtain motors controlled through a Broadlink Wi-Fi bridge.
+Homebridge plugin for Dooya DT360E curtain motors controlled directly over Wi-Fi.
 
 ## What this does
 
 - Exposes each curtain as a HomeKit `WindowCovering`
-- Sends Broadlink `open`, `close`, `stop`, and `get position` commands to a Dooya DT360E controller
-- Keeps an estimated position in HomeKit when the curtain is moved by time rather than feedback
-
-## Important note
-
-The Dooya curtain motor itself is usually not Wi-Fi. In most setups, the Wi-Fi device is a Broadlink RM controller that transmits RF to the curtain motor.
+- Talks to the Dooya controller directly over the network
+- Supports timed position tracking in HomeKit
+- Tries both Dooya variants automatically: `DT360E` and `DT360E-2`
 
 ## Installation
 
-Place this repository in your Homebridge plugins folder or link it locally:
+### Homebridge plugin folder
+
+Install this package in the same Homebridge environment where Homebridge runs.
+
+If your Homebridge is in Docker, the plugin must be present inside the Homebridge container or its persistent `node_modules` volume, not only on your local machine.
+
+### Docker example
+
+If your Homebridge container stores plugins in a persistent data folder, install the plugin there:
 
 ```bash
-npm link
+cd /path/to/homebridge/data/homebridge
+npm install git+ssh://git@github.com/sanychonline/homebridge-broadlink-dooya.git
 ```
 
-Then restart Homebridge.
+Then restart the Homebridge container.
 
 ## Example config
 
@@ -28,16 +34,16 @@ Then restart Homebridge.
 {
   "platform": "BroadlinkDooya",
   "name": "Broadlink Dooya",
-  "discoveryTimeoutMs": 4000,
   "devices": [
     {
       "name": "Living Room Curtain",
       "host": "192.168.1.50",
       "mac": "aa:bb:cc:dd:ee:ff",
+      "type": 20045,
+      "protocol": "dooya",
       "totalDurationOpen": 30,
       "totalDurationClose": 30,
-      "initialPosition": 0,
-      "pollIntervalSeconds": 120
+      "initialPosition": 0
     }
   ]
 }
@@ -46,16 +52,16 @@ Then restart Homebridge.
 ## Config fields
 
 - `name`: accessory name
-- `host`: Broadlink device IP address
-- `mac`: Broadlink device MAC address
+- `host`: device IP address
+- `mac`: device MAC address
+- `type`: Broadlink device type, usually `20045` (`0x4e4d`) or `20141` (`0x4ead`)
+- `protocol`: optional override, `dooya` or `dooya2`
 - `totalDurationOpen`: seconds to fully open
 - `totalDurationClose`: seconds to fully close
-- `initialPosition`: starting position used before the first refresh
-- `pollIntervalSeconds`: optional periodic refresh of actual position
-- `refreshOnStartup`: refresh position once after startup, default `true`
+- `initialPosition`: starting position used before the first move
 
 ## Notes
 
-- If you know the Broadlink IP and MAC, set both directly.
-- If you only set one of them, the plugin will try to resolve the device from discovery.
-- If the curtain does not report position reliably, HomeKit will still work with timed movement.
+- This plugin is for direct Wi-Fi control of the Dooya controller.
+- If one device type fails during startup, the plugin automatically retries the other Dooya type.
+- HomeKit position is estimated from movement time, so set the open/close durations as accurately as possible.

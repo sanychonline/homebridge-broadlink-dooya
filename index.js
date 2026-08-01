@@ -16,6 +16,11 @@ const DEFAULT_BROADLINK_IV = Buffer.from([
 ]);
 
 const DOOYA_TYPES = new Set([0x4e4d, 0x4ead]);
+const DOOYA_V2_COMMANDS = {
+  open: Buffer.from([0x4a, 0x31, 0xa0]),
+  close: Buffer.from([0x61, 0x32, 0xa0]),
+  stop: Buffer.from([0x4c, 0x73, 0xa0]),
+};
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -50,6 +55,32 @@ function parsePosition(value, fallback = 0) {
     return fallback;
   }
   return clamp(Math.round(parsed), 0, 100);
+}
+
+function resolveProtocol(config, deviceType) {
+  const configured = String(config.protocol || '').trim().toLowerCase();
+  if (configured === 'dooya2' || configured === 'v2') {
+    return 'dooya2';
+  }
+  if (configured === 'dooya' || configured === 'v1' || configured === 'original') {
+    return 'dooya';
+  }
+
+  if (deviceType === 0x4ead) {
+    return 'dooya2';
+  }
+
+  return 'dooya';
+}
+
+function getAlternateDooyaType(type) {
+  if (type === 0x4ead) {
+    return 0x4e4d;
+  }
+  if (type === 0x4e4d) {
+    return 0x4ead;
+  }
+  return null;
 }
 
 class BroadlinkSession {
@@ -100,7 +131,13 @@ class BroadlinkSession {
     payload.fill(0x31, 0x04, 0x13);
     payload[0x1e] = 0x01;
     payload[0x2d] = 0x01;
-    Buffer.from('Test 1', 'ascii').copy(payload, 0x30);
+    payload[0x30] = 'T'.charCodeAt(0);
+    payload[0x31] = 'e'.charCodeAt(0);
+    payload[0x32] = 's'.charCodeAt(0);
+    payload[0x33] = 't'.charCodeAt(0);
+    payload[0x34] = ' '.charCodeAt(0);
+    payload[0x35] = ' '.charCodeAt(0);
+    payload[0x36] = '1'.charCodeAt(0);
 
     const response = await this.request(0x65, payload);
     if (response.payload.length >= 0x14) {
@@ -368,23 +405,41 @@ class DooyaCurtain {
     this.log = log;
   }
 
-  async open() {
-    return this._send(0x01, 0x00);
+  async open(protocol = 'dooya') {
+    return protocol === 'dooya2'
+      ? this._sendDooya2(DOOYA_V2_COMMANDS.open)
+      : this._sendDooya(0x01, 0x00);
   }
 
-  async close() {
-    return this._send(0x02, 0x00);
+  async close(protocol = 'dooya') {
+    return protocol === 'dooya2'
+      ? this._sendDooya2(DOOYA_V2_COMMANDS.close)
+      : this._sendDooya(0x02, 0x00);
   }
 
-  async stop() {
-    return this._send(0x03, 0x00);
+  async stop(protocol = 'dooya') {
+    return protocol === 'dooya2'
+      ? this._sendDooya2(DOOYA_V2_COMMANDS.stop)
+      : this._sendDooya(0x03, 0x00);
   }
 
-  async getPercentage() {
-    return this._send(0x06, 0x5d);
+  async getPercentage(protocol = 'dooya') {
+    if (protocol === 'dooya2') {
+      return null;
+    }
+    return this._sendDooya(0x06, 0x5d);
   }
 
-  async _send(magic1, magic2) {
+  async setPercentage(position, protocol = 'dooya') {
+    if (protocol === 'dooya2') {
+      const percent = clamp(Number(position), 0, 100);
+      return this._sendDooya2(Buffer.from([percent, 0x70, 0xa0]));
+    }
+
+    throw new Error('Direct percentage setting is only available for Dooya DT360E-2');
+  }
+
+  async _sendDooya(magic1, magic2) {
     const packet = Buffer.alloc(16, 0);
     packet[0x00] = 0x09;
     packet[0x02] = 0xbb;
@@ -400,6 +455,33 @@ class DooyaCurtain {
 
     return response.payload[4];
   }
+
+  async _sendDooya2(command) {
+    const payload = Buffer.isBuffer(command) ? Buffer.from(command) : Buffer.from(command || []);
+    const packet = Buffer.alloc(0x0c + payload.length, 0);
+    packet[0x02] = 0xa5;
+    packet[0x03] = 0xa5;
+    packet[0x04] = 0x5a;
+    packet[0x05] = 0x5a;
+    packet[0x08] = 0x01;
+    packet[0x09] = 0x0b;
+    packet[0x0a] = payload.length & 0xff;
+    packet[0x0b] = (payload.length >> 8) & 0xff;
+    payload.copy(packet, 0x0c);
+
+    let checksum = 0xbeaf;
+    for (const byte of packet) {
+      checksum = (checksum + byte) & 0xffff;
+    }
+    packet[0x06] = checksum & 0xff;
+    packet[0x07] = (checksum >> 8) & 0xff;
+
+    const response = await this.session.request(0x6a, packet);
+    if (!response.payload || response.payload.length < 1) {
+      return null;
+    }
+    return response.payload[0];
+  }
 }
 
 class DooyaCurtainAccessory {
@@ -410,6 +492,7 @@ class DooyaCurtainAccessory {
     this.accessory = null;
     this.service = null;
     this.controller = new DooyaCurtain(session, platform.log);
+    this.protocol = String(config.protocol || 'dooya').toLowerCase();
     this.queue = Promise.resolve();
     this.currentPosition = parsePosition(config.initialPosition, undefined);
     this.targetPosition = parsePosition(config.initialPosition, 0);
@@ -431,7 +514,7 @@ class DooyaCurtainAccessory {
       || accessory.addService(Service.AccessoryInformation);
     accessory.getService(Service.AccessoryInformation)
       .setCharacteristic(Characteristic.Manufacturer, 'Broadlink')
-      .setCharacteristic(Characteristic.Model, 'Dooya DT360E')
+      .setCharacteristic(Characteristic.Model, this.protocol === 'dooya2' ? 'Dooya DT360E-2' : 'Dooya DT360E')
       .setCharacteristic(Characteristic.SerialNumber, this.config.mac || this.config.host || this.name);
 
     this.service = accessory.getService(Service.WindowCovering)
@@ -544,14 +627,7 @@ class DooyaCurtainAccessory {
   }
 
   async refresh() {
-    const position = await this.controller.getPercentage();
-    if (Number.isFinite(position)) {
-      this.currentPosition = clamp(position, 0, 100);
-      this.lastKnownPosition = this.currentPosition;
-      this.targetPosition = this.currentPosition;
-      this.positionState = this.platform.hap.Characteristic.PositionState.STOPPED;
-      this._publishState();
-    }
+    return;
   }
 
   async handleHoldPosition(value) {
@@ -574,7 +650,7 @@ class DooyaCurtainAccessory {
         clearTimeout(this.motionTimer);
         this.motionTimer = null;
       }
-      await this.controller.stop();
+      await this.controller.stop(this.protocol);
       if (Number.isFinite(this.currentPosition)) {
         this.lastKnownPosition = this.currentPosition;
       }
@@ -588,7 +664,7 @@ class DooyaCurtainAccessory {
     this.targetPosition = target;
 
     if (target === current) {
-      await this.controller.stop();
+      await this.controller.stop(this.protocol);
       this.positionState = this.platform.hap.Characteristic.PositionState.STOPPED;
       this._publishState();
       return;
@@ -610,15 +686,13 @@ class DooyaCurtainAccessory {
       : this.platform.hap.Characteristic.PositionState.DECREASING;
     this._publishState();
 
-    if (movingUp) {
-      await this.controller.open();
-    } else {
-      await this.controller.close();
-    }
+    await (movingUp
+      ? this.controller.open(this.protocol)
+      : this.controller.close(this.protocol));
 
     this.motionTimer = setTimeout(async () => {
       try {
-        await this.controller.stop();
+        await this.controller.stop(this.protocol);
       } catch (error) {
         this.platform.log.warn(`Failed to stop ${this.name}: ${error.message}`);
       } finally {
@@ -679,20 +753,13 @@ class BroadlinkDooyaPlatform {
           continue;
         }
 
-        const session = new BroadlinkSession({
-          host: resolved.host,
-          mac: resolved.mac,
-          type: resolved.type || deviceConfig.type || 0x4e4d,
-          port: resolved.host.port || 80,
-          log: this.log,
-          debug: Boolean(this.config.debug),
-          name: deviceConfig.name,
-        });
-        await session.authenticate();
+        const sessionResult = await this._openSession(deviceConfig, resolved);
+        const session = sessionResult.session;
+        const protocol = sessionResult.protocol;
         this.sessions.push(session);
 
         const accessory = this._getAccessory(deviceConfig, resolved);
-        const curtain = new DooyaCurtainAccessory(this, deviceConfig, session);
+        const curtain = new DooyaCurtainAccessory(this, { ...deviceConfig, protocol }, session);
         await curtain.initialize(accessory);
         this.curtains.push(curtain);
         this.log.info(`Configured Dooya curtain ${deviceConfig.name} at ${resolved.host.address}`);
@@ -703,7 +770,54 @@ class BroadlinkDooyaPlatform {
   }
 
   async _resolveDevice(deviceConfig, discoveredByMac) {
+    const protocol = resolveProtocol(deviceConfig, Number(deviceConfig.type || 0));
+
+    if (deviceConfig.mac) {
+      const normalized = deviceConfig.mac.replace(/[^a-fA-F0-9]/g, '').toLowerCase();
+      const discovered = discoveredByMac.get(normalized);
+      if (discovered) {
+        return {
+          ...discovered,
+          host: {
+            address: deviceConfig.host || discovered.host.address,
+            port: Number(deviceConfig.port || discovered.host.port || 80),
+          },
+          type: Number(deviceConfig.type || discovered.type || 0x4e4d),
+          protocol: resolveProtocol(deviceConfig, Number(deviceConfig.type || discovered.type || 0x4e4d)),
+        };
+      }
+    }
+
+    if (deviceConfig.host) {
+      const found = Array.from(discoveredByMac.values()).find((device) => device.host.address === deviceConfig.host);
+      if (found) {
+        return {
+          ...found,
+          host: {
+            address: deviceConfig.host,
+            port: Number(deviceConfig.port || found.host.port || 80),
+          },
+          type: Number(deviceConfig.type || found.type || 0x4e4d),
+          protocol: resolveProtocol(deviceConfig, Number(deviceConfig.type || found.type || 0x4e4d)),
+        };
+      }
+    }
+
     if (deviceConfig.host && deviceConfig.mac) {
+      const mac = parseMac(deviceConfig.mac);
+      if (!mac) {
+        throw new Error(`Invalid MAC address for ${deviceConfig.name}: ${deviceConfig.mac}`);
+      }
+
+      return {
+        host: { address: deviceConfig.host, port: Number(deviceConfig.port || 80) },
+        mac,
+        type: Number(deviceConfig.type || 0x4e4d),
+        protocol,
+      };
+    }
+
+    if (deviceConfig.host || deviceConfig.mac) {
       const mac = parseMac(deviceConfig.mac);
       if (!mac) {
         throw new Error(`Invalid MAC address for ${deviceConfig.name}: ${deviceConfig.mac}`);
@@ -712,30 +826,63 @@ class BroadlinkDooyaPlatform {
         host: { address: deviceConfig.host, port: Number(deviceConfig.port || 80) },
         mac,
         type: Number(deviceConfig.type || 0x4e4d),
+        protocol,
       };
     }
 
-    if (deviceConfig.mac) {
-      const normalized = deviceConfig.mac.replace(/[^a-fA-F0-9]/g, '').toLowerCase();
-      const discovered = discoveredByMac.get(normalized);
-      if (discovered) {
-        return discovered;
-      }
-    }
-
-    if (deviceConfig.host) {
-      const found = Array.from(discoveredByMac.values()).find((device) => device.host.address === deviceConfig.host);
-      if (found) {
-        return found;
-      }
-    }
-
     const firstDooya = Array.from(discoveredByMac.values()).find((device) => DOOYA_TYPES.has(device.type));
-    if (firstDooya) {
-      return firstDooya;
+    if (!firstDooya) {
+      return null;
     }
 
-    return null;
+    return {
+      ...firstDooya,
+      protocol: resolveProtocol(deviceConfig, firstDooya.type),
+    };
+  }
+
+  async _openSession(deviceConfig, resolved) {
+    const typeCandidates = [];
+    const preferredType = Number(deviceConfig.type || resolved.type || 0x4e4d);
+    const alternateType = getAlternateDooyaType(preferredType);
+
+    if (Number.isFinite(preferredType)) {
+      typeCandidates.push(preferredType);
+    }
+    if (Number.isFinite(alternateType)) {
+      typeCandidates.push(alternateType);
+    }
+
+    const uniqueTypes = [...new Set(typeCandidates.filter((type) => Number.isFinite(type)))];
+    let lastError = null;
+
+    for (const type of uniqueTypes) {
+      const session = new BroadlinkSession({
+        host: resolved.host,
+        mac: resolved.mac,
+        type,
+        port: resolved.host.port || 80,
+        log: this.log,
+        debug: Boolean(this.config.debug),
+        name: deviceConfig.name,
+      });
+
+      try {
+        const ready = await session.authenticate();
+        if (!ready) {
+          throw new Error('Broadlink authentication failed');
+        }
+        return {
+          session,
+          protocol: resolveProtocol({ ...deviceConfig, type }, type),
+        };
+      } catch (error) {
+        lastError = error;
+        await session.close();
+      }
+    }
+
+    throw lastError || new Error(`Unable to authenticate ${deviceConfig.name}`);
   }
 
   _getAccessory(deviceConfig, resolved) {
