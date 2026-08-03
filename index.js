@@ -135,6 +135,10 @@ function decodeBroadlinkError(value) {
   return `Broadlink device returned error ${value} (${signed}): ${description}`;
 }
 
+function hex(value, width = 2) {
+  return Number(value).toString(16).padStart(width, '0');
+}
+
 class BroadlinkSession {
   constructor({ host, mac, type = 0x4e4d, port = 80, log, debug, name = 'Homebridge', deviceId, serviceId, controlKey, controlId, controlIdEndian = 'auto' }) {
     this.host = host;
@@ -171,6 +175,7 @@ class BroadlinkSession {
         this.fallbackId.writeUInt32BE(idValue, 0);
       }
       this.ready = true;
+      this.trace(`Using paired control key for ${this.name}; controlId=${idValue} idBytes=${this.id.toString('hex')}`);
     }
 
     this.socket.on('message', (message, rinfo) => {
@@ -182,6 +187,12 @@ class BroadlinkSession {
         this.log.error?.(error);
       }
     });
+  }
+
+  trace(message) {
+    if (this.debug && this.log) {
+      this.log.info(`[debug] ${message}`);
+    }
   }
 
   async close() {
@@ -233,6 +244,7 @@ class BroadlinkSession {
     this.count = count;
 
     const packet = this._buildPacket(command, payload, count);
+    this.trace(`Sending command=0x${hex(command)} type=0x${hex(this.type, 4)} count=${count} id=${this.id.toString('hex')} payloadLen=${payload?.length || 0} packetLen=${packet.length}`);
     const responsePromise = new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.pending.delete(count);
@@ -269,7 +281,7 @@ class BroadlinkSession {
         const nextId = this.fallbackId;
         this.fallbackId = null;
         this.id = nextId;
-        this.log?.debug?.(`Retrying ${this.name} with alternate BroadLink control id byte order`);
+        this.trace(`Retrying ${this.name} with alternate BroadLink control id byte order id=${this.id.toString('hex')}`);
         return this.request(command, payload, { ...options, allowFallbackId: false });
       }
       throw error;
@@ -348,6 +360,7 @@ class BroadlinkSession {
       const error = new Error(decodeBroadlinkError(err));
       error.broadlinkCode = err;
       error.broadlinkCodeSigned = err > 0x7fff ? err - 0x10000 : err;
+      this.trace(`Response error command=0x${hex(message[0x26])} count=${count} rawError=${err} signedError=${error.broadlinkCodeSigned}`);
       pending.reject(error);
       return;
     }
@@ -365,6 +378,7 @@ class BroadlinkSession {
       payload,
       command: message[0x26],
     });
+    this.trace(`Response ok command=0x${hex(message[0x26])} count=${count} payloadLen=${payload.length}`);
   }
 
   static async discover({ timeoutMs = 4000, log } = {}) {
@@ -558,7 +572,9 @@ class DooyaCurtain {
   }
 
   async _sendDnaCommand(command) {
-    const packet = Buffer.from(JSON.stringify(command), 'utf8');
+    const json = JSON.stringify(command);
+    this.session.trace(`DNA command payload ${json}`);
+    const packet = Buffer.from(json, 'utf8');
     const response = await this.session.request(0x6a, packet);
     if (!response.payload || response.payload.length < 1) {
       return null;
