@@ -55,6 +55,16 @@ function formatMac(buffer) {
     .join(':');
 }
 
+function makeDeviceId(mac) {
+  if (!mac) {
+    return '';
+  }
+  const macHex = Buffer.isBuffer(mac)
+    ? mac.toString('hex')
+    : String(mac).replace(/[^a-fA-F0-9]/g, '').toLowerCase();
+  return macHex.length === 12 ? `${'0'.repeat(20)}${macHex}` : '';
+}
+
 function parsePosition(value, fallback = 0) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) {
@@ -83,6 +93,9 @@ function parseControlKey(value) {
 
 function resolveProtocol(config, deviceType) {
   const configured = String(config.protocol || '').trim().toLowerCase();
+  if (configured === 'dna' || configured === 'profile' || configured === 'broadlink') {
+    return 'dna';
+  }
   if (configured === 'dooya2' || configured === 'v2') {
     return 'dooya2';
   }
@@ -92,6 +105,9 @@ function resolveProtocol(config, deviceType) {
 
   if (deviceType === 0x4ead) {
     return 'dooya2';
+  }
+  if (deviceType === 0x4f6e) {
+    return 'dna';
   }
 
   return 'dooya';
@@ -120,7 +136,7 @@ function decodeBroadlinkError(value) {
 }
 
 class BroadlinkSession {
-  constructor({ host, mac, type = 0x4e4d, port = 80, log, debug, name = 'Homebridge', controlKey, controlId }) {
+  constructor({ host, mac, type = 0x4e4d, port = 80, log, debug, name = 'Homebridge', deviceId, serviceId, controlKey, controlId }) {
     this.host = host;
     this.mac = mac;
     this.type = type;
@@ -135,6 +151,8 @@ class BroadlinkSession {
     this.count = Math.floor(Math.random() * 0xffff);
     this.pending = new Map();
     this.ready = false;
+    this.deviceId = deviceId || makeDeviceId(mac);
+    this.serviceId = serviceId || '112.1.173';
 
     const parsedControlKey = parseControlKey(controlKey);
     const parsedControlId = Number(controlId);
@@ -454,24 +472,36 @@ class DooyaCurtain {
   }
 
   async open(protocol = 'dooya') {
+    if (protocol === 'dna') {
+      return this._sendDnaStatus('curtain_work', 1);
+    }
     return protocol === 'dooya2'
       ? this._sendDooya2(DOOYA_V2_COMMANDS.open)
       : this._sendDooya(0x01, 0x00);
   }
 
   async close(protocol = 'dooya') {
+    if (protocol === 'dna') {
+      return this._sendDnaStatus('curtain_work', 0);
+    }
     return protocol === 'dooya2'
       ? this._sendDooya2(DOOYA_V2_COMMANDS.close)
       : this._sendDooya(0x02, 0x00);
   }
 
   async stop(protocol = 'dooya') {
+    if (protocol === 'dna') {
+      return this._sendDnaStatus('curtain_work', 2);
+    }
     return protocol === 'dooya2'
       ? this._sendDooya2(DOOYA_V2_COMMANDS.stop)
       : this._sendDooya(0x03, 0x00);
   }
 
   async getPercentage(protocol = 'dooya') {
+    if (protocol === 'dna') {
+      return null;
+    }
     if (protocol === 'dooya2') {
       return null;
     }
@@ -479,12 +509,36 @@ class DooyaCurtain {
   }
 
   async setPercentage(position, protocol = 'dooya') {
+    if (protocol === 'dna') {
+      const percent = clamp(Number(position), 0, 100);
+      return this._sendDnaStatus('curtain_targetpos', percent);
+    }
     if (protocol === 'dooya2') {
       const percent = clamp(Number(position), 0, 100);
       return this._sendDooya2(Buffer.from([percent, 0x70, 0xa0]));
     }
 
     throw new Error('Direct percentage setting is only available for Dooya DT360E-2');
+  }
+
+  async _sendDnaStatus(param, value) {
+    const command = {
+      did: this.session.deviceId || '',
+      srv: this.session.serviceId || '',
+      act: 'set',
+      params: [param],
+      vals: [[{ val: value, idx: 1 }]],
+    };
+    return this._sendDnaCommand(command);
+  }
+
+  async _sendDnaCommand(command) {
+    const packet = Buffer.from(JSON.stringify(command), 'utf8');
+    const response = await this.session.request(0x6a, packet);
+    if (!response.payload || response.payload.length < 1) {
+      return null;
+    }
+    return response.payload;
   }
 
   async _sendDooya(magic1, magic2) {
@@ -562,7 +616,7 @@ class DooyaCurtainAccessory {
       || accessory.addService(Service.AccessoryInformation);
     accessory.getService(Service.AccessoryInformation)
       .setCharacteristic(Characteristic.Manufacturer, 'Broadlink')
-      .setCharacteristic(Characteristic.Model, this.protocol === 'dooya2' ? 'Dooya DT360E-2' : 'Dooya DT360E')
+      .setCharacteristic(Characteristic.Model, this.protocol === 'dna' ? 'Dooya DT360E DNA' : this.protocol === 'dooya2' ? 'Dooya DT360E-2' : 'Dooya DT360E')
       .setCharacteristic(Characteristic.SerialNumber, this.config.mac || this.config.host || this.name);
 
     this.service = accessory.getService(Service.WindowCovering)
@@ -734,9 +788,20 @@ class DooyaCurtainAccessory {
       : this.platform.hap.Characteristic.PositionState.DECREASING;
     this._publishState();
 
-    await (movingUp
-      ? this.controller.open(this.protocol)
-      : this.controller.close(this.protocol));
+    try {
+      if (this.protocol === 'dna') {
+        await this.controller.setPercentage(target, this.protocol);
+      } else {
+        await (movingUp
+          ? this.controller.open(this.protocol)
+          : this.controller.close(this.protocol));
+      }
+    } catch (error) {
+      this.targetPosition = current;
+      this.positionState = this.platform.hap.Characteristic.PositionState.STOPPED;
+      this._publishState();
+      throw error;
+    }
 
     this.motionTimer = setTimeout(async () => {
       try {
@@ -760,7 +825,7 @@ class DooyaCurtainAccessory {
       this.platform.log.error(`Curtain command failed for ${this.name}: ${error.message}`);
       return undefined;
     });
-    return run;
+    return this.queue;
   }
 }
 
@@ -917,6 +982,8 @@ class BroadlinkDooyaPlatform {
         log: this.log,
         debug: Boolean(this.config.debug),
         name: deviceConfig.name,
+        deviceId: deviceConfig.did || deviceConfig.deviceId,
+        serviceId: deviceConfig.serviceId || deviceConfig.srv || '112.1.173',
         controlKey: deviceConfig.controlKey || deviceConfig.aesKey || deviceConfig.aeskey,
         controlId: deviceConfig.controlId || deviceConfig.terminalId || deviceConfig.terminalid,
       });
