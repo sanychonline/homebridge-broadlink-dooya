@@ -54,7 +54,7 @@ Then restart the Homebridge container.
 - `name`: accessory name
 - `host`: device IP address
 - `mac`: device MAC address
-- `type`: Broadlink device type, usually `20045` (`0x4e4d`) or `20141` (`0x4ead`)
+- `type`: Broadlink device type, usually `20045` (`0x4e4d`), `20141` (`0x4ead`), or `20334` (`0x4f6e`)
 - `protocol`: optional override, `dooya` or `dooya2`
 - `totalDurationOpen`: seconds to fully open
 - `totalDurationClose`: seconds to fully close
@@ -65,6 +65,7 @@ Then restart the Homebridge container.
 - This plugin is for direct Wi-Fi control of the Dooya controller.
 - If one device type fails during startup, the plugin automatically retries the other Dooya type.
 - HomeKit position is estimated from movement time, so set the open/close durations as accurately as possible.
+- A local capture from a DT360E named `Shades` reported type `20334` (`0x4f6e`).
 
 ## Error 65529
 

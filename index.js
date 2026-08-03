@@ -15,7 +15,7 @@ const DEFAULT_BROADLINK_IV = Buffer.from([
   0xdd, 0xb3, 0xba, 0x69, 0x5a, 0x2e, 0x6f, 0x58,
 ]);
 
-const DOOYA_TYPES = new Set([0x4e4d, 0x4ead]);
+const DOOYA_TYPES = new Set([0x4e4d, 0x4ead, 0x4f6e]);
 const DOOYA_V2_COMMANDS = {
   open: Buffer.from([0x4a, 0x31, 0xa0]),
   close: Buffer.from([0x61, 0x32, 0xa0]),
@@ -84,6 +84,9 @@ function getAlternateDooyaType(type) {
     return 0x4e4d;
   }
   if (type === 0x4e4d) {
+    return 0x4ead;
+  }
+  if (type === 0x4f6e) {
     return 0x4ead;
   }
   return null;
@@ -859,10 +862,14 @@ class BroadlinkDooyaPlatform {
   async _openSession(deviceConfig, resolved) {
     const typeCandidates = [];
     const preferredType = Number(deviceConfig.type || resolved.type || 0x4e4d);
+    const discoveredType = Number(resolved.type || 0);
     const alternateType = getAlternateDooyaType(preferredType);
 
     if (Number.isFinite(preferredType)) {
       typeCandidates.push(preferredType);
+    }
+    if (Number.isFinite(discoveredType)) {
+      typeCandidates.push(discoveredType);
     }
     if (Number.isFinite(alternateType)) {
       typeCandidates.push(alternateType);
