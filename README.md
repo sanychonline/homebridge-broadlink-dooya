@@ -41,6 +41,8 @@ Then restart the Homebridge container.
       "mac": "aa:bb:cc:dd:ee:ff",
       "type": 20045,
       "protocol": "dooya",
+      "controlId": 1,
+      "controlKey": "32_HEX_CHARS_FROM_BROADLINK_APP",
       "totalDurationOpen": 30,
       "totalDurationClose": 30,
       "initialPosition": 0
@@ -56,6 +58,8 @@ Then restart the Homebridge container.
 - `mac`: device MAC address
 - `type`: Broadlink device type, usually `20045` (`0x4e4d`), `20141` (`0x4ead`), or `20334` (`0x4f6e`)
 - `protocol`: optional override, `dooya` or `dooya2`
+- `controlId`: optional BroadLink paired terminal/control id
+- `controlKey`: optional BroadLink paired AES/control key, 32 hex characters
 - `totalDurationOpen`: seconds to fully open
 - `totalDurationClose`: seconds to fully close
 - `initialPosition`: starting position used before the first move
@@ -72,3 +76,12 @@ Then restart the Homebridge container.
 `65529` is Broadlink error `-7`. The device is rejecting local control because the control key is expired or local device locking is enabled.
 
 In the Broadlink app, open the device settings and switch off `Lock Device` / device lock. If the setting is missing or the device still rejects auth, remove and pair the device again on the same 2.4 GHz WLAN, then restart Homebridge.
+
+If you use the macOS BroadLink app, paired device data may be available in:
+
+```bash
+sqlite3 -json ~/Library/Containers/cn.com.broadlink.econtrol.international/Data/Documents/BLDataManager001.sqlite \
+  "select endpointId,friendlyName,mac,productId,cookie from BL_DeviceInfo_List;"
+```
+
+Decode the `cookie` value from base64. For DNA devices, `terminalid` can be used as `controlId`, and `aeskey` can be used as `controlKey`.

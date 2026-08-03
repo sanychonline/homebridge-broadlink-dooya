@@ -63,6 +63,24 @@ function parsePosition(value, fallback = 0) {
   return clamp(Math.round(parsed), 0, 100);
 }
 
+function parseControlKey(value) {
+  if (!value) {
+    return null;
+  }
+
+  if (Buffer.isBuffer(value) && value.length === 16) {
+    return Buffer.from(value);
+  }
+
+  const text = String(value).trim();
+  if (/^[0-9a-fA-F]{32}$/.test(text)) {
+    return Buffer.from(text, 'hex');
+  }
+
+  const decoded = Buffer.from(text, 'base64');
+  return decoded.length === 16 ? decoded : null;
+}
+
 function resolveProtocol(config, deviceType) {
   const configured = String(config.protocol || '').trim().toLowerCase();
   if (configured === 'dooya2' || configured === 'v2') {
@@ -102,7 +120,7 @@ function decodeBroadlinkError(value) {
 }
 
 class BroadlinkSession {
-  constructor({ host, mac, type = 0x4e4d, port = 80, log, debug, name = 'Homebridge' }) {
+  constructor({ host, mac, type = 0x4e4d, port = 80, log, debug, name = 'Homebridge', controlKey, controlId }) {
     this.host = host;
     this.mac = mac;
     this.type = type;
@@ -117,6 +135,14 @@ class BroadlinkSession {
     this.count = Math.floor(Math.random() * 0xffff);
     this.pending = new Map();
     this.ready = false;
+
+    const parsedControlKey = parseControlKey(controlKey);
+    const parsedControlId = Number(controlId);
+    if (parsedControlKey && Number.isFinite(parsedControlId)) {
+      this.key = parsedControlKey;
+      this.id.writeUInt32LE(parsedControlId >>> 0, 0);
+      this.ready = true;
+    }
 
     this.socket.on('message', (message, rinfo) => {
       this._handleMessage(message, rinfo);
@@ -145,6 +171,10 @@ class BroadlinkSession {
   }
 
   async authenticate() {
+    if (this.ready) {
+      return true;
+    }
+
     const payload = Buffer.alloc(0x50, 0);
     payload.fill(0x31, 0x04, 0x13);
     payload[0x1e] = 0x01;
@@ -887,6 +917,8 @@ class BroadlinkDooyaPlatform {
         log: this.log,
         debug: Boolean(this.config.debug),
         name: deviceConfig.name,
+        controlKey: deviceConfig.controlKey || deviceConfig.aesKey || deviceConfig.aeskey,
+        controlId: deviceConfig.controlId || deviceConfig.terminalId || deviceConfig.terminalid,
       });
 
       try {
