@@ -64,6 +64,7 @@ Then restart the Homebridge container.
 - `controlIdEndian`: optional BroadLink control id byte order, `auto`, `le`, or `be`. Defaults to `auto`.
 - `did`: optional BroadLink DID/endpointId. If omitted, the plugin builds one from the MAC for DNA devices.
 - `serviceId`: optional BroadLink profile service id. Defaults to `112.1.173`, which is used by DT360E `0x4f6e`.
+- `dnaCommandMode`: optional DNA command strategy, `raw` or `stdctrl`. Defaults to `raw`.
 - `totalDurationOpen`: seconds to fully open
 - `totalDurationClose`: seconds to fully close
 - `initialPosition`: starting position used before the first move
@@ -75,7 +76,8 @@ Then restart the Homebridge container.
 - HomeKit position is estimated from movement time, so set the open/close durations as accurately as possible.
 - A local capture from a DT360E named `Shades` reported type `20334` (`0x4f6e`).
 - For type `20334` (`0x4f6e`), use `protocol: "dna"` so the plugin sends BroadLink profile commands such as `curtain_work` and `curtain_targetpos`.
-- DNA mode sends BroadLink `stdctrl` payloads and retries `controlId` byte order automatically when the device returns `-7`.
+- DNA mode sends BroadLink SDK-style raw Dooya frames by default and retries `controlId` byte order automatically when the device returns `-7`.
+- Set `dnaCommandMode` to `stdctrl` only when testing BroadLink profile JSON payloads.
 
 ## Error 65529
 

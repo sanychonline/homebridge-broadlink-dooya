@@ -140,7 +140,7 @@ function hex(value, width = 2) {
 }
 
 class BroadlinkSession {
-  constructor({ host, mac, type = 0x4e4d, port = 80, log, debug, name = 'Homebridge', deviceId, serviceId, controlKey, controlId, controlIdEndian = 'auto' }) {
+  constructor({ host, mac, type = 0x4e4d, port = 80, log, debug, name = 'Homebridge', deviceId, serviceId, controlKey, controlId, controlIdEndian = 'auto', dnaCommandMode = 'raw' }) {
     this.host = host;
     this.mac = mac;
     this.type = type;
@@ -158,6 +158,7 @@ class BroadlinkSession {
     this.deviceId = deviceId || makeDeviceId(mac);
     this.serviceId = serviceId || '112.1.173';
     this.fallbackId = null;
+    this.dnaCommandMode = String(dnaCommandMode || 'raw').toLowerCase();
 
     const parsedControlKey = parseControlKey(controlKey);
     const parsedControlId = Number(controlId);
@@ -562,6 +563,24 @@ class DooyaCurtain {
   }
 
   async _sendDnaStatus(param, value) {
+    if (this.session.dnaCommandMode !== 'stdctrl') {
+      if (param === 'curtain_work') {
+        if (value === 0) {
+          return this._sendDooya2(DOOYA_V2_COMMANDS.close);
+        }
+        if (value === 1) {
+          return this._sendDooya2(DOOYA_V2_COMMANDS.open);
+        }
+        if (value === 2) {
+          return this._sendDooya2(DOOYA_V2_COMMANDS.stop);
+        }
+      }
+      if (param === 'curtain_targetpos') {
+        const percent = clamp(Number(value), 0, 100);
+        return this._sendDooya2(Buffer.from([percent, 0x70, 0xa0]));
+      }
+    }
+
     const command = {
       prop: 'stdctrl',
       act: 'set',
@@ -602,23 +621,24 @@ class DooyaCurtain {
   async _sendDooya2(command) {
     const payload = Buffer.isBuffer(command) ? Buffer.from(command) : Buffer.from(command || []);
     const packet = Buffer.alloc(0x0c + payload.length, 0);
-    packet[0x02] = 0xa5;
-    packet[0x03] = 0xa5;
-    packet[0x04] = 0x5a;
-    packet[0x05] = 0x5a;
-    packet[0x08] = 0x01;
-    packet[0x09] = 0x0b;
-    packet[0x0a] = payload.length & 0xff;
-    packet[0x0b] = (payload.length >> 8) & 0xff;
+    packet[0x00] = 0xa5;
+    packet[0x01] = 0xa5;
+    packet[0x02] = 0x5a;
+    packet[0x03] = 0x5a;
+    packet[0x06] = 0x01;
+    packet[0x07] = 0x0b;
+    packet[0x08] = payload.length & 0xff;
+    packet[0x09] = (payload.length >> 8) & 0xff;
     payload.copy(packet, 0x0c);
 
     let checksum = 0xbeaf;
     for (const byte of packet) {
       checksum = (checksum + byte) & 0xffff;
     }
-    packet[0x06] = checksum & 0xff;
-    packet[0x07] = (checksum >> 8) & 0xff;
+    packet[0x04] = checksum & 0xff;
+    packet[0x05] = (checksum >> 8) & 0xff;
 
+    this.session.trace(`Dooya v2 frame payload=${payload.toString('hex')} packet=${packet.toString('hex')}`);
     const response = await this.session.request(0x6a, packet);
     if (!response.payload || response.payload.length < 1) {
       return null;
@@ -1028,6 +1048,7 @@ class BroadlinkDooyaPlatform {
         controlKey: deviceConfig.controlKey || deviceConfig.aesKey || deviceConfig.aeskey,
         controlId: deviceConfig.controlId || deviceConfig.terminalId || deviceConfig.terminalid,
         controlIdEndian: deviceConfig.controlIdEndian || deviceConfig.idEndian || 'auto',
+        dnaCommandMode: deviceConfig.dnaCommandMode || this.config.dnaCommandMode || 'raw',
       });
 
       try {
