@@ -627,12 +627,12 @@ class DooyaCurtainAccessory {
     this.service
       .getCharacteristic(Characteristic.CurrentPosition)
       .onGet(() => this.getCurrentPosition())
-      .onSet((value, callback) => this.setTargetPosition(value).then(() => callback()).catch(callback));
+      .onSet((value) => this.setTargetPosition(value));
 
     this.service
       .getCharacteristic(Characteristic.TargetPosition)
       .onGet(() => this.getTargetPosition())
-      .onSet((value, callback) => this.setTargetPosition(value).then(() => callback()).catch(callback));
+      .onSet((value) => this.setTargetPosition(value));
 
     this.service
       .getCharacteristic(Characteristic.PositionState)
@@ -641,7 +641,7 @@ class DooyaCurtainAccessory {
     if (Characteristic.HoldPosition) {
       this.service
         .getCharacteristic(Characteristic.HoldPosition)
-        .onSet((value, callback) => this.handleHoldPosition(value).then(() => callback()).catch(callback));
+        .onSet((value) => this.handleHoldPosition(value));
     }
 
     this._restoreContext(accessory.context || {});
