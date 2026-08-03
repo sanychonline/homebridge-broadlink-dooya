@@ -136,7 +136,7 @@ function decodeBroadlinkError(value) {
 }
 
 class BroadlinkSession {
-  constructor({ host, mac, type = 0x4e4d, port = 80, log, debug, name = 'Homebridge', deviceId, serviceId, controlKey, controlId }) {
+  constructor({ host, mac, type = 0x4e4d, port = 80, log, debug, name = 'Homebridge', deviceId, serviceId, controlKey, controlId, controlIdEndian = 'auto' }) {
     this.host = host;
     this.mac = mac;
     this.type = type;
@@ -153,12 +153,23 @@ class BroadlinkSession {
     this.ready = false;
     this.deviceId = deviceId || makeDeviceId(mac);
     this.serviceId = serviceId || '112.1.173';
+    this.fallbackId = null;
 
     const parsedControlKey = parseControlKey(controlKey);
     const parsedControlId = Number(controlId);
     if (parsedControlKey && Number.isFinite(parsedControlId)) {
       this.key = parsedControlKey;
-      this.id.writeUInt32LE(parsedControlId >>> 0, 0);
+      const idValue = parsedControlId >>> 0;
+      const endian = String(controlIdEndian || 'auto').toLowerCase();
+      if (endian === 'be' || endian === 'big') {
+        this.id.writeUInt32BE(idValue, 0);
+        this.fallbackId = Buffer.alloc(4, 0);
+        this.fallbackId.writeUInt32LE(idValue, 0);
+      } else {
+        this.id.writeUInt32LE(idValue, 0);
+        this.fallbackId = Buffer.alloc(4, 0);
+        this.fallbackId.writeUInt32BE(idValue, 0);
+      }
       this.ready = true;
     }
 
@@ -216,7 +227,8 @@ class BroadlinkSession {
     return this.ready;
   }
 
-  async request(command, payload) {
+  async request(command, payload, options = {}) {
+    const allowFallbackId = options.allowFallbackId !== false;
     const count = (this.count + 1) & 0xffff;
     this.count = count;
 
@@ -250,7 +262,18 @@ class BroadlinkSession {
       });
     });
 
-    return responsePromise;
+    try {
+      return await responsePromise;
+    } catch (error) {
+      if (allowFallbackId && this.fallbackId && error.broadlinkCodeSigned === -7) {
+        const nextId = this.fallbackId;
+        this.fallbackId = null;
+        this.id = nextId;
+        this.log?.debug?.(`Retrying ${this.name} with alternate BroadLink control id byte order`);
+        return this.request(command, payload, { ...options, allowFallbackId: false });
+      }
+      throw error;
+    }
   }
 
   _buildPacket(command, payload, count) {
@@ -322,7 +345,10 @@ class BroadlinkSession {
 
     const err = message.readUInt16LE(0x22);
     if (err !== 0) {
-      pending.reject(new Error(decodeBroadlinkError(err)));
+      const error = new Error(decodeBroadlinkError(err));
+      error.broadlinkCode = err;
+      error.broadlinkCodeSigned = err > 0x7fff ? err - 0x10000 : err;
+      pending.reject(error);
       return;
     }
 
@@ -523,8 +549,7 @@ class DooyaCurtain {
 
   async _sendDnaStatus(param, value) {
     const command = {
-      did: this.session.deviceId || '',
-      srv: this.session.serviceId || '',
+      prop: 'stdctrl',
       act: 'set',
       params: [param],
       vals: [[{ val: value, idx: 1 }]],
@@ -986,6 +1011,7 @@ class BroadlinkDooyaPlatform {
         serviceId: deviceConfig.serviceId || deviceConfig.srv || '112.1.173',
         controlKey: deviceConfig.controlKey || deviceConfig.aesKey || deviceConfig.aeskey,
         controlId: deviceConfig.controlId || deviceConfig.terminalId || deviceConfig.terminalid,
+        controlIdEndian: deviceConfig.controlIdEndian || deviceConfig.idEndian || 'auto',
       });
 
       try {
