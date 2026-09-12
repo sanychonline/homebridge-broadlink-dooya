@@ -1,0 +1,41 @@
+{
+  "name": "homebridge-dooya-dt360e",
+  "version": "0.1.0",
+  "description": "Homebridge plugin for Dooya DT360E Wi-Fi curtain motors",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "README.md",
+    "package.json"
+  ],
+  "scripts": {
+    "prepare": "node -e \"require('./index.js')\"",
+    "test": "node -c index.js"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/sanychonline/homebridge-broadlink-dooya.git"
+  },
+  "bugs": {
+    "url": "https://github.com/sanychonline/homebridge-broadlink-dooya/issues"
+  },
+  "homepage": "https://github.com/sanychonline/homebridge-broadlink-dooya#readme",
+  "keywords": [
+    "homebridge-plugin",
+    "homebridge",
+    "broadlink",
+    "dooya",
+    "curtain",
+    "window-covering"
+  ],
+  "engines": {
+    "homebridge": "^1.6.0 || ^2.0.0",
+    "node": ">=18.0.0"
+  },
+  "peerDependencies": {
+    "homebridge": ">=2.0.0"
+  }
+}
