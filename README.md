@@ -53,8 +53,6 @@ Then restart the Homebridge container.
       "name": "Living Room Curtain",
       "host": "192.168.1.50",
       "mac": "aa:bb:cc:dd:ee:ff",
-      "type": 20334,
-      "protocol": "dt360e",
       "invertPosition": false
     }
   ]
@@ -66,9 +64,9 @@ Then restart the Homebridge container.
 - `name`: accessory name
 - `host`: device IP address
 - `mac`: device MAC address
-- `type`: BroadLink device type, use `20334` for DT360E (`0x4f6e`)
-- `protocol`: use `dt360e`
 - `invertPosition`: optional, set to `true` when the motor reports open/closed backwards
+- `protocol`: optional override. Normally omit it; defaults to `dt360e`.
+- `type`: optional override. Normally omit it; the plugin discovers the BroadLink type automatically and falls back to DT360E type `20334` (`0x4f6e`).
 
 ## Notes
 

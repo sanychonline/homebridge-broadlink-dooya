@@ -118,7 +118,7 @@ function resolveProtocol(config, deviceType) {
     return 'dt360e';
   }
 
-  return 'dooya';
+  return 'dt360e';
 }
 
 function getAlternateDooyaType(type) {
@@ -1324,6 +1324,7 @@ class BroadlinkDooyaPlatform {
 
   async _resolveDevice(deviceConfig, discoveredByMac) {
     const protocol = resolveProtocol(deviceConfig, Number(deviceConfig.type || 0));
+    const fallbackType = protocol === 'dt360e' ? 0x4f6e : 0x4e4d;
 
     if (deviceConfig.mac) {
       const normalized = deviceConfig.mac.replace(/[^a-fA-F0-9]/g, '').toLowerCase();
@@ -1335,8 +1336,8 @@ class BroadlinkDooyaPlatform {
             address: deviceConfig.host || discovered.host.address,
             port: Number(deviceConfig.port || discovered.host.port || 80),
           },
-          type: Number(deviceConfig.type || discovered.type || 0x4e4d),
-          protocol: resolveProtocol(deviceConfig, Number(deviceConfig.type || discovered.type || 0x4e4d)),
+          type: Number(deviceConfig.type || discovered.type || fallbackType),
+          protocol: resolveProtocol(deviceConfig, Number(deviceConfig.type || discovered.type || fallbackType)),
         };
       }
     }
@@ -1350,8 +1351,8 @@ class BroadlinkDooyaPlatform {
             address: deviceConfig.host,
             port: Number(deviceConfig.port || found.host.port || 80),
           },
-          type: Number(deviceConfig.type || found.type || 0x4e4d),
-          protocol: resolveProtocol(deviceConfig, Number(deviceConfig.type || found.type || 0x4e4d)),
+          type: Number(deviceConfig.type || found.type || fallbackType),
+          protocol: resolveProtocol(deviceConfig, Number(deviceConfig.type || found.type || fallbackType)),
         };
       }
     }
@@ -1365,7 +1366,7 @@ class BroadlinkDooyaPlatform {
       return {
         host: { address: deviceConfig.host, port: Number(deviceConfig.port || 80) },
         mac,
-        type: Number(deviceConfig.type || 0x4e4d),
+        type: Number(deviceConfig.type || fallbackType),
         protocol,
       };
     }
@@ -1378,7 +1379,7 @@ class BroadlinkDooyaPlatform {
       return {
         host: { address: deviceConfig.host, port: Number(deviceConfig.port || 80) },
         mac,
-        type: Number(deviceConfig.type || 0x4e4d),
+        type: Number(deviceConfig.type || fallbackType),
         protocol,
       };
     }
@@ -1411,7 +1412,8 @@ class BroadlinkDooyaPlatform {
     }
 
     const typeCandidates = [];
-    const preferredType = Number(deviceConfig.type || resolved.type || 0x4e4d);
+    const fallbackType = protocol === 'dt360e' ? 0x4f6e : 0x4e4d;
+    const preferredType = Number(deviceConfig.type || resolved.type || fallbackType);
     const discoveredType = Number(resolved.type || 0);
     const alternateType = getAlternateDooyaType(preferredType);
 
