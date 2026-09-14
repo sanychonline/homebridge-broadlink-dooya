@@ -1003,7 +1003,7 @@ class DooyaCurtainAccessory {
       });
     }
 
-    const defaultPollInterval = (this.protocol === 'cloud' || this.protocol === 'dt360e') ? 60 : 0;
+    const defaultPollInterval = (this.protocol === 'cloud' || this.protocol === 'dt360e') ? 15 : 0;
     const pollInterval = Number(this.config.pollIntervalSeconds ?? defaultPollInterval);
     if (pollInterval > 0) {
       this.refreshTimer = setInterval(() => {
