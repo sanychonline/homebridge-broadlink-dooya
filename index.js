@@ -674,7 +674,7 @@ class DooyaCurtain {
     this.log = log;
   }
 
-  async open(protocol = 'dooya') {
+  async open(protocol = 'dt360e') {
     if (protocol === 'dt360e') {
       return this._sendDt360eControlPayload(Buffer.from([0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]));
     }
@@ -689,7 +689,7 @@ class DooyaCurtain {
       : this._sendDooya(0x01, 0x00);
   }
 
-  async close(protocol = 'dooya') {
+  async close(protocol = 'dt360e') {
     if (protocol === 'dt360e') {
       return this._sendDt360eControlPayload(Buffer.from([0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]));
     }
@@ -704,7 +704,7 @@ class DooyaCurtain {
       : this._sendDooya(0x02, 0x00);
   }
 
-  async stop(protocol = 'dooya') {
+  async stop(protocol = 'dt360e') {
     if (protocol === 'dt360e') {
       return this._sendDt360eControlPayload(Buffer.from([0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]));
     }
@@ -719,7 +719,7 @@ class DooyaCurtain {
       : this._sendDooya(0x03, 0x00);
   }
 
-  async getPercentage(protocol = 'dooya') {
+  async getPercentage(protocol = 'dt360e') {
     if (protocol === 'dt360e') {
       const response = await this._sendDt360eFrame(Buffer.alloc(0), 0x01);
       return this._parseDt360ePosition(response);
@@ -737,7 +737,7 @@ class DooyaCurtain {
     return this._sendDooya(0x06, 0x5d);
   }
 
-  async setPercentage(position, protocol = 'dooya') {
+  async setPercentage(position, protocol = 'dt360e') {
     if (protocol === 'dt360e') {
       const percent = clamp(Number(position), 0, 100);
       return this._sendDt360eControlPayload(Buffer.from([0x00, 0x09, percent, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]));
@@ -944,7 +944,7 @@ class DooyaCurtainAccessory {
     this.accessory = null;
     this.service = null;
     this.controller = new DooyaCurtain(session, platform.log);
-    this.protocol = String(config.protocol || 'dooya').toLowerCase();
+    this.protocol = String(config.protocol || 'dt360e').toLowerCase();
     this.invertPosition = Boolean(config.invertPosition);
     this.queue = Promise.resolve();
     this.currentPosition = parsePosition(config.initialPosition, undefined);
@@ -1315,7 +1315,7 @@ class BroadlinkDooyaPlatform {
         const curtain = new DooyaCurtainAccessory(this, { ...deviceConfig, protocol }, session);
         await curtain.initialize(accessory);
         this.curtains.push(curtain);
-        this.log.info(`Configured Dooya curtain ${deviceConfig.name} at ${resolved.host.address}`);
+        this.log.info(`Configured Dooya curtain ${deviceConfig.name} at ${resolved.host.address} using protocol=${protocol} type=0x${session.type.toString(16)}`);
       } catch (error) {
         this.log.error(`Failed to configure ${deviceConfig.name}: ${error.message}`);
       }
