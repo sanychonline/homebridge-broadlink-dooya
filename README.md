@@ -7,6 +7,7 @@ Homebridge plugin for Dooya DT360E curtain motors controlled directly over Wi-Fi
 - Exposes each curtain as a HomeKit `WindowCovering`
 - Talks to the Dooya controller over local BroadLink UDP
 - Reads the real DT360E motor position every 15 seconds by default
+- Persists the last known position in Homebridge storage for restarts and power cuts
 - Supports BroadLink DT360E devices such as type `20334` (`0x4f6e`)
 
 ## Installation
@@ -66,6 +67,7 @@ Then restart the Homebridge container.
 - `mac`: device MAC address
 - `invertPosition`: optional, set to `true` when the motor reports open/closed backwards
 - `pollIntervalSeconds`: optional, how often to read the real motor position. Defaults to `15` seconds for DT360E local mode.
+- `positionStorePath`: optional override for the JSON file used to persist the last known position. Normally omit it; the default is `dooya-dt360e-positions.json` in the Homebridge storage folder.
 - `protocol`: optional override. Normally omit it; defaults to `dt360e`.
 - `type`: optional override. Normally omit it; the plugin discovers the BroadLink type automatically and falls back to DT360E type `20334` (`0x4f6e`).
 
@@ -75,5 +77,6 @@ Then restart the Homebridge container.
 - The BroadLink mobile app is only needed to pair the curtain motor to Wi-Fi. After that, the Homebridge plugin connects to the device locally.
 - Local DT360E mode reads real status with `010b` frames and sends target position with `020b` frames.
 - HomeKit position is resynchronized from the motor automatically every 15 seconds, so manual movement or missed state changes are corrected without extra config.
+- If the motor is temporarily offline, HomeKit keeps the last known position from `dooya-dt360e-positions.json` until the next successful status read.
 - DT360E type `20334` (`0x4f6e`) expects the encrypted BroadLink `0x6a` payload to be prefixed with the little-endian inner frame length, for example `0c00 + a5a55a5a...` for status.
 - If BroadLink returns `65529` (`-7`), check that the curtain is paired on the same WLAN and that device lock is disabled in the BroadLink mobile app, then restart Homebridge.

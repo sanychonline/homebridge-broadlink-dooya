@@ -2,12 +2,15 @@
 
 const dgram = require('dgram');
 const crypto = require('crypto');
+const fs = require('fs');
 const https = require('https');
 const os = require('os');
+const path = require('path');
 
 const PLUGIN_NAME = 'homebridge-dooya-dt360e';
 const PLATFORM_NAME = 'DooyaDT360E';
 const LEGACY_PLATFORM_NAME = 'BroadlinkDooya';
+const POSITION_STORE_FILE = 'dooya-dt360e-positions.json';
 const DEFAULT_BROADLINK_KEY = Buffer.from([
   0x09, 0x76, 0x28, 0x34, 0x3f, 0xe9, 0x9e, 0x23,
   0x76, 0x5c, 0x15, 0x13, 0xac, 0xcf, 0x8b, 0x02,
@@ -65,6 +68,17 @@ function makeDeviceId(mac) {
     ? mac.toString('hex')
     : String(mac).replace(/[^a-fA-F0-9]/g, '').toLowerCase();
   return macHex.length === 12 ? `${'0'.repeat(20)}${macHex}` : '';
+}
+
+function makeStorageKey(config) {
+  const mac = String(config.mac || '').replace(/[^a-fA-F0-9]/g, '').toLowerCase();
+  if (mac) {
+    return `mac:${mac}`;
+  }
+  if (config.host) {
+    return `host:${config.host}`;
+  }
+  return `name:${config.name || 'curtain'}`;
 }
 
 function parsePosition(value, fallback = 0) {
@@ -953,6 +967,7 @@ class DooyaCurtainAccessory {
     this.motionTimer = null;
     this.refreshTimer = null;
     this.lastKnownPosition = null;
+    this.storageKey = makeStorageKey(config);
   }
 
   get name() {
@@ -995,6 +1010,7 @@ class DooyaCurtainAccessory {
     }
 
     this._restoreContext(accessory.context || {});
+    this._restorePersistedPosition();
     this._publishState();
 
     if (this.config.refreshOnStartup !== false) {
@@ -1035,6 +1051,21 @@ class DooyaCurtainAccessory {
     }
   }
 
+  _restorePersistedPosition() {
+    const stored = this.platform.getStoredPosition(this.storageKey);
+    if (!stored) {
+      return;
+    }
+
+    if (Number.isFinite(stored.lastKnownPosition)) {
+      this.currentPosition = parsePosition(stored.lastKnownPosition, this.currentPosition ?? 0);
+      this.lastKnownPosition = this.currentPosition;
+    }
+    if (Number.isFinite(stored.targetPosition)) {
+      this.targetPosition = parsePosition(stored.targetPosition, this.targetPosition ?? this.currentPosition ?? 0);
+    }
+  }
+
   _persistContext() {
     if (!this.accessory) {
       return;
@@ -1045,6 +1076,16 @@ class DooyaCurtainAccessory {
     this.accessory.context.mac = this.config.mac || null;
     this.accessory.context.host = this.config.host || null;
     this.accessory.context.invertPosition = this.invertPosition;
+    this.platform.saveStoredPosition(this.storageKey, {
+      name: this.name,
+      host: this.config.host || null,
+      mac: this.config.mac || null,
+      protocol: this.protocol,
+      invertPosition: this.invertPosition,
+      lastKnownPosition: this.lastKnownPosition,
+      targetPosition: this.targetPosition,
+      updatedAt: new Date().toISOString(),
+    });
   }
 
   _publishState() {
@@ -1278,9 +1319,52 @@ class BroadlinkDooyaPlatform {
     this.curtains = [];
     this.sessions = [];
     this.hap = api.hap;
+    this.positionStore = {};
+    this.positionStorePath = this._getPositionStorePath();
+    this._loadPositionStore();
 
     api.on('didFinishLaunching', this.didFinishLaunching.bind(this));
     api.on('shutdown', this.shutdown.bind(this));
+  }
+
+  _getPositionStorePath() {
+    const configuredPath = this.config.positionStorePath || this.config.positionStoragePath;
+    if (configuredPath) {
+      return path.resolve(String(configuredPath));
+    }
+
+    const storagePath = this.api.user?.storagePath?.();
+    return path.join(storagePath || process.cwd(), POSITION_STORE_FILE);
+  }
+
+  _loadPositionStore() {
+    try {
+      if (!fs.existsSync(this.positionStorePath)) {
+        this.positionStore = {};
+        return;
+      }
+
+      const parsed = JSON.parse(fs.readFileSync(this.positionStorePath, 'utf8'));
+      this.positionStore = parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (error) {
+      this.positionStore = {};
+      this.log.warn(`Could not read Dooya position store ${this.positionStorePath}: ${error.message}`);
+    }
+  }
+
+  getStoredPosition(key) {
+    return this.positionStore[key] || null;
+  }
+
+  saveStoredPosition(key, value) {
+    this.positionStore[key] = value;
+
+    try {
+      fs.mkdirSync(path.dirname(this.positionStorePath), { recursive: true });
+      fs.writeFileSync(this.positionStorePath, `${JSON.stringify(this.positionStore, null, 2)}\n`);
+    } catch (error) {
+      this.log.debug?.(`Could not write Dooya position store ${this.positionStorePath}: ${error.message}`);
+    }
   }
 
   configureAccessory(accessory) {
