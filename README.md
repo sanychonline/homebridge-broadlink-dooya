@@ -45,6 +45,8 @@ Then restart the Homebridge container.
 
 ## Example config
 
+Minimal DT360E config:
+
 ```json
 {
   "platform": "DooyaDT360E",
@@ -60,6 +62,8 @@ Then restart the Homebridge container.
 }
 ```
 
+Do not add `type`, `protocol`, durations, device IDs, or cloud fields unless you are deliberately overriding a default. For normal DT360E local Wi-Fi control, the plugin discovers the BroadLink type and uses the DT360E protocol automatically.
+
 ## Config fields
 
 - `name`: accessory name
@@ -70,6 +74,31 @@ Then restart the Homebridge container.
 - `positionStorePath`: optional override for the JSON file used to persist the last known position. Normally omit it; the default is `dooya-dt360e-positions.json` in the Homebridge storage folder.
 - `protocol`: optional override. Normally omit it; defaults to `dt360e`.
 - `type`: optional override. Normally omit it; the plugin discovers the BroadLink type automatically and falls back to DT360E type `20334` (`0x4f6e`).
+
+## Position updates
+
+The plugin reads the real motor position every 15 seconds by default. Each successful status read updates:
+
+- HomeKit `CurrentPosition`
+- HomeKit `TargetPosition`
+- the persistent position file
+
+If the motor does not answer a polling request, Homebridge keeps running and the plugin keeps the last known position. The failed poll is logged only in debug mode, so temporary Wi-Fi or power issues should not spam normal logs.
+
+You can change the interval with `pollIntervalSeconds`, but the default `15` seconds is recommended for HomeKit/Siri accuracy.
+
+## Persistent position store
+
+The plugin writes the last known position to `dooya-dt360e-positions.json` in the Homebridge storage folder. In the official Homebridge Docker layout this is typically the persistent `/homebridge` folder, so the file survives container restarts.
+
+The file is used on Homebridge startup before the first successful motor response. This helps Siri avoid guessing from `0%` or `100%` after:
+
+- Homebridge restarts
+- Docker/container restarts
+- power cuts
+- temporary motor or Wi-Fi unavailability
+
+Once the motor responds again, the next 15-second status read replaces the stored value with the real position.
 
 ## Notes
 
