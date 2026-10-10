@@ -1,6 +1,6 @@
 {
   "name": "homebridge-dooya-dt360e",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Homebridge plugin for Dooya DT360E Wi-Fi curtain motors",
   "main": "index.js",
   "files": [
