@@ -89,6 +89,14 @@ function parsePosition(value, fallback = 0) {
   return clamp(Math.round(parsed), 0, 100);
 }
 
+function isEndpointPosition(position) {
+  return position === 0 || position === 100;
+}
+
+function isMidRangePosition(position) {
+  return Number.isFinite(position) && position > 5 && position < 95;
+}
+
 function parseControlKey(value) {
   if (!value) {
     return null;
@@ -967,6 +975,7 @@ class DooyaCurtainAccessory {
     this.motionTimer = null;
     this.refreshTimer = null;
     this.lastKnownPosition = null;
+    this.lastIgnoredEndpoint = null;
     this.storageKey = makeStorageKey(config);
   }
 
@@ -1147,7 +1156,7 @@ class DooyaCurtainAccessory {
       return;
     }
 
-    this._applyDeviceStatus(position);
+    this._applyDeviceStatus(position, { source: 'poll' });
   }
 
   async handleHoldPosition(value) {
@@ -1172,7 +1181,7 @@ class DooyaCurtainAccessory {
       }
       const position = await this.controller.stop(this.protocol);
       if ((this.protocol === 'cloud' || this.protocol === 'dt360e') && position && Number.isFinite(position.current)) {
-        this._applyDeviceStatus({ ...position, target: position.current });
+        this._applyDeviceStatus({ ...position, target: position.current }, { source: 'command' });
         return;
       }
       if (Number.isFinite(this.currentPosition)) {
@@ -1223,7 +1232,7 @@ class DooyaCurtainAccessory {
         this.platform.log.debug?.(`${this.name} target ${target}% maps to device ${deviceTarget}%`);
         const position = await this.controller.setPercentage(deviceTarget, this.protocol);
         if (reportsActualPosition && position && Number.isFinite(position.current)) {
-          this._applyDeviceStatus(position, { targetOverride: target });
+          this._applyDeviceStatus(position, { source: 'command', targetOverride: target });
         }
       } else {
         await (movingUp
@@ -1273,6 +1282,10 @@ class DooyaCurtainAccessory {
       return;
     }
 
+    if (this._shouldIgnoreEndpointStatus(currentPosition, options)) {
+      return;
+    }
+
     this.currentPosition = currentPosition;
     this.lastKnownPosition = currentPosition;
     const targetOverride = parsePosition(options.targetOverride, undefined);
@@ -1298,6 +1311,27 @@ class DooyaCurtainAccessory {
         ? this.platform.hap.Characteristic.PositionState.INCREASING
         : this.platform.hap.Characteristic.PositionState.DECREASING;
     this._publishState();
+  }
+
+  _shouldIgnoreEndpointStatus(currentPosition, options = {}) {
+    if (options.source === 'command' || this.config.trustEndpointPositionOnPoll === true) {
+      this.lastIgnoredEndpoint = null;
+      return false;
+    }
+
+    const reference = Number.isFinite(this.lastKnownPosition)
+      ? this.lastKnownPosition
+      : this.getCurrentPosition();
+    if (!isEndpointPosition(currentPosition) || !isMidRangePosition(reference)) {
+      this.lastIgnoredEndpoint = null;
+      return false;
+    }
+
+    if (this.lastIgnoredEndpoint !== currentPosition) {
+      this.platform.log.debug?.(`${this.name} ignored endpoint ${currentPosition}% from passive status; keeping last known ${reference}%`);
+    }
+    this.lastIgnoredEndpoint = currentPosition;
+    return true;
   }
 
   async _enqueue(fn) {

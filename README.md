@@ -72,6 +72,7 @@ Do not add `type`, `protocol`, durations, device IDs, or cloud fields unless you
 - `invertPosition`: optional, set to `true` when the motor reports open/closed backwards
 - `pollIntervalSeconds`: optional, how often to read the real motor position. Defaults to `15` seconds for DT360E local mode.
 - `positionStorePath`: optional override for the JSON file used to persist the last known position. Normally omit it; the default is `dooya-dt360e-positions.json` in the Homebridge storage folder.
+- `trustEndpointPositionOnPoll`: optional, defaults to `false`. Set to `true` only if your motor reliably reports `0%` and `100%` after power loss. By default, passive polling will not overwrite a mid-range stored position with a sudden endpoint value.
 - `protocol`: optional override. Normally omit it; defaults to `dt360e`.
 - `type`: optional override. Normally omit it; the plugin discovers the BroadLink type automatically and falls back to DT360E type `20334` (`0x4f6e`).
 
@@ -99,6 +100,8 @@ The file is used on Homebridge startup before the first successful motor respons
 - temporary motor or Wi-Fi unavailability
 
 Once the motor responds again, the next 15-second status read replaces the stored value with the real position.
+
+To avoid losing a good mid-range estimate after a power cut, passive polling treats a sudden `0%` or `100%` report as suspicious when the last known position was between `5%` and `95%`. The plugin keeps the stored mid-range value unless the endpoint came from a command sent by HomeKit/Siri. If your installation reports endpoints reliably, you can opt out with `trustEndpointPositionOnPoll: true`.
 
 ## Notes
 
