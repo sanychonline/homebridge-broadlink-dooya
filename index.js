@@ -976,6 +976,7 @@ class DooyaCurtainAccessory {
     this.refreshTimer = null;
     this.lastKnownPosition = null;
     this.lastIgnoredEndpoint = null;
+    this.endpointGuardActive = true;
     this.storageKey = makeStorageKey(config);
   }
 
@@ -1151,7 +1152,14 @@ class DooyaCurtainAccessory {
       return;
     }
 
-    const position = await this.controller.getPercentage(this.protocol);
+    let position;
+    try {
+      position = await this.controller.getPercentage(this.protocol);
+    } catch (error) {
+      this.endpointGuardActive = true;
+      throw error;
+    }
+
     if (!position || !Number.isFinite(position.current)) {
       return;
     }
@@ -1283,11 +1291,14 @@ class DooyaCurtainAccessory {
     }
 
     if (this._shouldIgnoreEndpointStatus(currentPosition, options)) {
-      return;
+      return false;
     }
 
     this.currentPosition = currentPosition;
     this.lastKnownPosition = currentPosition;
+    if (options.source === 'command' || !isEndpointPosition(currentPosition)) {
+      this.endpointGuardActive = false;
+    }
     const targetOverride = parsePosition(options.targetOverride, undefined);
 
     if (this.protocol === 'cloud' || this.protocol === 'dt360e') {
@@ -1311,18 +1322,20 @@ class DooyaCurtainAccessory {
         ? this.platform.hap.Characteristic.PositionState.INCREASING
         : this.platform.hap.Characteristic.PositionState.DECREASING;
     this._publishState();
+    return true;
   }
 
   _shouldIgnoreEndpointStatus(currentPosition, options = {}) {
     if (options.source === 'command' || this.config.trustEndpointPositionOnPoll === true) {
       this.lastIgnoredEndpoint = null;
+      this.endpointGuardActive = false;
       return false;
     }
 
     const reference = Number.isFinite(this.lastKnownPosition)
       ? this.lastKnownPosition
       : this.getCurrentPosition();
-    if (!isEndpointPosition(currentPosition) || !isMidRangePosition(reference)) {
+    if (!this.endpointGuardActive || !isEndpointPosition(currentPosition) || !isMidRangePosition(reference)) {
       this.lastIgnoredEndpoint = null;
       return false;
     }
